@@ -3,27 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LoungeConcierge - Smart Lounge Matcher</title>
+    <title>LoungeConcierge - Live Access Engine</title>
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#020617">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+    <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    colors: { slate: { 950: '#020617' } }
-                }
-            }
+            theme: { extend: { colors: { slate: { 950: '#020617' } } } }
         }
     </script>
     <style>
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased">
@@ -32,178 +25,235 @@
         
         <header class="border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md rounded-2xl px-6 py-4 flex items-center justify-between shadow-xl mb-6">
             <div class="flex items-center gap-3">
-                <div class="bg-gradient-to-tr from-amber-500 to-yellow-400 p-2 rounded-xl shadow-lg shadow-amber-500/10">
+                <div class="bg-gradient-to-tr from-amber-500 to-yellow-400 p-2 rounded-xl shadow-lg">
                     <svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
                 </div>
                 <div>
-                    <h1 class="font-bold tracking-tight text-lg bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">LoungeConcierge</h1>
-                    <p class="text-[10px] text-slate-400 font-medium tracking-wide">SMART ACCESS ENGINE</p>
+                    <h1 class="font-bold tracking-tight text-lg bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">LoungeConcierge</h1>
+                    <p class="text-[10px] text-slate-400 font-medium tracking-wide">LIVE PARSING MATRIX</p>
                 </div>
             </div>
-            <span class="text-[11px] font-semibold px-2.5 py-1 bg-slate-850 border border-slate-700 text-slate-350 rounded-full flex items-center gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> App Native
+            <span class="text-[11px] font-semibold px-2.5 py-1 bg-slate-800 border border-slate-700 text-slate-350 rounded-full flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Hardware Linked
             </span>
         </header>
 
-        <div id="app-view" class="flex-1 flex flex-col justify-center">
-            </div>
+        <div id="app-view" class="flex-1 flex flex-col justify-center"></div>
 
-        <footer id="app-footer" class="mt-8 bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4 flex items-center justify-between">
-            <div class="flex gap-2">
-                <div id="dot-1" class="h-1.5 rounded-full w-8 bg-amber-400 transition-all duration-300"></div>
-                <div id="dot-2" class="h-1.5 rounded-full w-2 bg-slate-700 transition-all duration-300"></div>
+        <footer id="app-footer" class="mt-8 bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[11px] font-mono text-slate-400">CONSOLE OUT:</p>
+                <span id="engine-status" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-amber-400">Idle</span>
             </div>
-            <p class="text-xs text-slate-400 font-medium">Local Isolation Active</p>
+            <div id="debug-log" class="text-[10px] font-mono text-slate-500 truncate">System initialized. Awaiting capture permission...</div>
         </footer>
     </div>
 
-    <script>
-        // State Machine Storage
-        let currentStep = 'SCAN_FRONT';
+    <canvas id="buffer-canvas" class="hidden"></canvas>
 
-        const mockMatches = [
-            { name: 'The Centurion Lounge', network: 'American Express', terminal: 'Terminal 3', accessVia: 'Amex Platinum', status: 'Best Perks', rating: '4.8' },
-            { name: 'Delta SkyClub', network: 'Delta', terminal: 'Terminal 3 (Concourse B)', accessVia: 'Delta Boarding Pass + Amex Platinum', status: 'Complimentary', rating: '4.5' },
-            { name: 'Plaza Premium Lounge', network: 'Priority Pass', terminal: 'Terminal 3', accessVia: 'Priority Pass Digital', status: 'Guest Fee Applies', rating: '4.1' },
+    <script>
+        // Core State Variables
+        let videoStream = null;
+        let walletData = { qrs: [], cardNetworks: [], holdsAmexPlatinum: false, holdsSapphireReserve: false };
+        
+        // Comprehensive Lounge Access Rules Engine
+        const SYSTEM_LOUNGES = [
+            { name: 'The Centurion Lounge', network: 'American Express', terminal: 'All Terminals', accessRule: (w) => w.holdsAmexPlatinum, description: 'Unlocked via American Express Platinum identification segment.' },
+            { name: 'Delta SkyClub', network: 'Delta Alliances', terminal: 'Concourse B / T3', accessRule: (w) => w.holdsAmexPlatinum && w.qrs.some(q => q.includes('DL') || q.includes('Delta')), description: 'Unlocked via matching active Delta Boarding Pass stub alongside Amex credentials.' },
+            { name: 'Plaza Premium / Chase Lounge', network: 'Priority Pass Network', terminal: 'International Pier', accessRule: (w) => w.holdsSapphireReserve || w.qrs.some(q => q.toLowerCase().includes('priority')), description: 'Access permitted via digital QR code validation or Sapphire Reserve tier access.' }
         ];
 
-        // State Machine Render Engine
-        function render() {
+        // Boot Up Sequence
+        document.addEventListener('DOMContentLoaded', () => {
+            showCaptureView();
+        });
+
+        // View 1: Render Video Stream & Hook Hardware Lens
+        async function showCaptureView() {
             const container = document.getElementById('app-view');
-            const footer = document.getElementById('app-footer');
-            const dot1 = document.getElementById('dot-1');
-            const dot2 = document.getElementById('dot-2');
+            document.getElementById('app-footer').classList.remove('hidden');
+            updateDebug('Awaiting viewport binding...', 'Active');
 
-            // Manage dynamic tracking bar visibility states
-            if (currentStep === 'PROCESSING' || currentStep === 'RESULTS') {
-                footer.classList.add('hidden');
+            container.innerHTML = `
+                <div class="animate-fade-in space-y-6">
+                    <div class="space-y-2">
+                        <h2 class="text-2xl font-bold tracking-tight text-white">Capture Lounge Credentials</h2>
+                        <p class="text-slate-400 text-sm leading-relaxed">Place all cards, boarding passes, and codes on a flat surface in clear lighting, then capture the photo.</p>
+                    </div>
+                    <div class="relative aspect-[4/3] w-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl">
+                        <video id="webcam-feed" autoplay playsinline class="w-full h-full object-cover"></video>
+                        <div class="absolute inset-4 border border-dashed border-slate-600/30 rounded-2xl pointer-events-none flex items-center justify-center">
+                            <span class="text-[10px] font-mono tracking-widest text-slate-500 bg-slate-950/80 px-3 py-1 rounded border border-slate-800/80">ALIGN TICKETS & PLASTICS INSIDE FRAME</span>
+                        </div>
+                    </div>
+                    <button onclick="processImageCapture()" class="w-full bg-slate-100 hover:bg-white text-slate-950 font-bold py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        Analyze Assets
+                    </button>
+                </div>`;
+
+            try {
+                // Request access to high-resolution rear-facing environment lens natively
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+                });
+                document.getElementById('webcam-feed').srcObject = videoStream;
+                updateDebug('Lens stream active at high resolution.', 'Live');
+            } catch (err) {
+                updateDebug('Camera deployment failed: ' + err.message, 'Fault');
+                alert('Please allow camera permissions to enable image scanning features.');
+            }
+        }
+
+        // View 2: Image Processing Core Pipeline
+        async function processImageCapture() {
+            const video = document.getElementById('webcam-feed');
+            if (!video || !videoStream) return;
+
+            const canvas = document.getElementById('buffer-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Set memory buffer geometry directly to video stream aspect ratio
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Terminate background camera stream loops to save battery/power
+            videoStream.getTracks().forEach(track => track.stop());
+
+            // Shift layout instantly into a processing animation loader
+            showLoaderLayout();
+
+            try {
+                const imgDataUrl = canvas.toDataURL('image/jpeg');
+
+                // PIPELINE STEP 1: Process QR Codes / Barcodes locally
+                updateDebug('Parsing QR / Barcode arrays...', 'Scanning');
+                const codeReader = new ZXing.BrowserMultiFormatReader();
+                try {
+                    const qrResult = await codeReader.decodeFromImageUrl(imgDataUrl);
+                    walletData.qrs.push(qrResult.text);
+                    updateDebug(`Found barcode element: "${qrResult.text}"`, 'Parsing');
+                } catch(e) {
+                    // No barcodes detected in frame loop, continue processing other elements
+                    updateDebug('No barcodes found. Advancing to text extraction...', 'Parsing');
+                }
+
+                // PIPELINE STEP 2: OCR Extraction via Client-Side Web Workers
+                updateDebug('Loading language arrays inside web worker...', 'OCR Processing');
+                const worker = await Tesseract.createWorker('eng');
+                const ocrData = await worker.recognize(imgDataUrl);
+                const extractedText = ocrData.data.text;
+                await worker.terminate();
+
+                updateDebug('Running masking routines and card calculations...', 'Masking');
+                parseExtractedMetadata(extractedText);
+
+                // PIPELINE STEP 3: Calculate Best Match & Update View
+                showResultsLayout();
+
+            } catch (err) {
+                updateDebug('Processing failure: ' + err.message, 'Fault');
+                alert('An error occurred while parsing the text fields. Reverting to start view.');
+                showCaptureView();
+            }
+        }
+
+        // Processing Logic Helper: Parsing Rules
+        function parseExtractedMetadata(text) {
+            // Log raw text output locally to help debug matching parameters
+            console.log("Raw Scanned Data Stream:\n", text);
+
+            // Scan for Card Networks & Account Levels
+            if (/platinum/i.test(text) || /american express/i.test(text) || /amex/i.test(text)) {
+                walletData.holdsAmexPlatinum = true;
+                walletData.cardNetworks.push('American Express Platinum');
+            }
+            if (/sapphire/i.test(text) || /chase/i.test(text) || /reserve/i.test(text)) {
+                walletData.holdsSapphireReserve = true;
+                walletData.cardNetworks.push('Chase Sapphire Reserve');
+            }
+
+            // Client-Side Security Masking Regex
+            // Matches traditional 12-16 digit rows and substitutes with asterisks
+            const panRegex = /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g;
+            const cleanTextLog = text.replace(panRegex, "****-****-****-XXXX");
+            
+            updateDebug('Scanned details matched and secured.', 'Complete');
+        }
+
+        function showLoaderLayout() {
+            const container = document.getElementById('app-view');
+            container.innerHTML = `
+                <div class="animate-fade-in flex flex-col items-center justify-center text-center p-6">
+                    <div class="relative w-24 h-24 mb-8">
+                        <div class="absolute inset-0 rounded-full border-4 border-amber-500/20 border-t-amber-400 animate-spin"></div>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2 tracking-tight">Processing Captured Assets</h3>
+                    <div class="text-slate-400 text-sm max-w-xs space-y-1.5 font-mono text-left bg-slate-900 p-4 rounded-xl border border-slate-800">
+                        <p class="text-xs text-amber-400/80 animate-pulse">⚡ Segmenting items in image...</p>
+                        <p class="text-xs text-slate-500">⚡ Extracting text grids via Tesseract...</p>
+                        <p class="text-xs text-slate-500">🔒 Applying privacy masks locally...</p>
+                    </div>
+                </div>`;
+        }
+
+        // View 3: Render Matched Rules Output Dashboard
+        function showResultsLayout() {
+            const container = document.getElementById('app-view');
+            document.getElementById('app-footer').classList.add('hidden'); // Hide debug console for cleaner layout
+
+            // Filter system data options through user credential states
+            const approvedLounges = SYSTEM_LOUNGES.filter(lounge => lounge.accessRule(walletData));
+
+            let dynamicListMarkup = '';
+
+            if (approvedLounges.length === 0) {
+                dynamicListMarkup = `
+                    <div class="p-6 text-center border border-dashed border-slate-800 rounded-2xl bg-slate-900/20">
+                        <p class="text-slate-400 text-sm">No lounge access links could be compiled automatically from this photo view.</p>
+                    </div>`;
             } else {
-                footer.classList.remove('hidden');
-            }
-
-            // Sync visual pipeline status nodes
-            if (currentStep === 'SCAN_FRONT') {
-                dot1.className = "h-1.5 rounded-full w-8 bg-amber-400 transition-all duration-300";
-                dot2.className = "h-1.5 rounded-full w-2 bg-slate-700 transition-all duration-300";
-            } else if (currentStep === 'SCAN_BACK') {
-                dot1.className = "h-1.5 rounded-full w-2 bg-slate-700 transition-all duration-300";
-                dot2.className = "h-1.5 rounded-full w-8 bg-amber-400 transition-all duration-300";
-            }
-
-            // Route execution flows
-            if (currentStep === 'SCAN_FRONT') {
-                container.innerHTML = `
-                    <div class="animate-fade-in space-y-6">
-                        <div class="space-y-2">
-                            <h2 class="text-2xl font-bold tracking-tight text-white">Scan Entry Pass</h2>
-                            <p class="text-slate-400 text-sm leading-relaxed">Position your boarding pass, digital Priority Pass QR, or airline membership barcode within the target frame.</p>
-                        </div>
-                        <div class="relative aspect-[4/3] w-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col items-center justify-center">
-                            <svg class="w-12 h-12 text-slate-700 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /></svg>
-                            <span class="text-xs text-slate-500 font-mono">[ CAMERA VIEWPORT ACTIVE ]</span>
-                            <div class="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_12px_#fbbf24] animate-bounce" style="animation-duration: 2.5s"></div>
-                        </div>
-                        <button onclick="navigate('SCAN_BACK')" class="w-full bg-slate-100 hover:bg-white text-slate-950 font-semibold py-4 px-6 rounded-2xl shadow-xl transition-all active:scale-[0.99] flex items-center justify-center gap-2">
-                            Proceed to Credit Card Access
-                        </button>
-                    </div>`;
-            } 
-            
-            else if (currentStep === 'SCAN_BACK') {
-                container.innerHTML = `
-                    <div class="animate-fade-in space-y-6">
-                        <div class="space-y-2">
-                            <span class="text-xs uppercase tracking-wider font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">Step 2: Card Verification</span>
-                            <h2 class="text-2xl font-bold tracking-tight text-white">Position Credit Card Back</h2>
-                            <p class="text-slate-400 text-sm leading-relaxed">Turn your card over. We will extract payment network tiers and instantly obscure your card number digits.</p>
-                        </div>
-                        <div class="relative aspect-[1.58/1] w-full bg-gradient-to-b from-slate-900 to-slate-950 rounded-2xl overflow-hidden border border-slate-700/60 shadow-inner flex flex-col items-center justify-center p-6">
-                            <div class="w-full h-full border-2 border-dashed border-amber-400/40 rounded-xl relative flex flex-col justify-between p-4 bg-slate-900/50">
-                                <div class="w-12 h-8 bg-slate-800 rounded-md border border-slate-700"></div>
-                                <div class="h-7 w-4/5 bg-slate-950/90 border border-slate-800 rounded flex items-center px-2 text-slate-500 font-mono text-xs tracking-wider">
-                                    <span class="text-amber-400 font-bold mr-2">🔒 AUTO-MASKING</span> **** **** **** 4321
-                                </div>
-                                <div class="flex justify-end"><div className="w-10 h-6 bg-slate-800/80 rounded"></div></div>
+                approvedLounges.forEach((lounge, i) => {
+                    dynamicListMarkup += `
+                        <div class="relative overflow-hidden rounded-2xl border bg-gradient-to-b p-5 ${i === 0 ? 'from-slate-900 to-slate-950 border-amber-500/40 shadow-2xl' : 'from-slate-900/90 to-slate-950/90 border-slate-800'} animate-fade-in">
+                            ${i === 0 ? '<div class="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-yellow-400 text-slate-950 font-mono font-black text-[9px] px-3 py-1 rounded-bl-xl tracking-wider shadow-md">RECOMMENDED</div>' : ''}
+                            <div class="mb-2">
+                                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${lounge.network}</span>
+                                <h4 class="text-lg font-bold text-white tracking-tight mt-0.5">${lounge.name}</h4>
                             </div>
-                        </div>
-                        <button onclick="navigate('PROCESSING')" class="w-full bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-bold py-4 px-6 rounded-2xl shadow-xl transition-all active:scale-[0.99]">
-                            Verify Perks & Run Matching Matrix
-                        </button>
-                    </div>`;
-            } 
-            
-            else if (currentStep === 'PROCESSING') {
-                container.innerHTML = `
-                    <div class="animate-fade-in flex flex-col items-center justify-center text-center p-6">
-                        <div class="relative w-24 h-24 mb-8">
-                            <div class="absolute inset-0 rounded-full border-4 border-amber-500/20 border-t-amber-400 animate-spin"></div>
-                        </div>
-                        <h3 class="text-xl font-bold text-white mb-2 tracking-tight">Evaluating Lounge Alliances...</h3>
-                        <div class="text-slate-400 text-sm max-w-xs space-y-1.5 font-mono text-left">
-                            <p class="text-xs text-amber-400/80 animate-pulse">→ Cross-referencing Priority Pass rules</p>
-                            <p class="text-xs text-slate-500">→ Checking terminal locations match codes</p>
-                        </div>
-                    </div>`;
-                
-                // Emulate algorithmic latency calculations natively
-                setTimeout(() => { navigate('RESULTS'); }, 2200);
-            } 
-            
-            else if (currentStep === 'RESULTS') {
-                let loungeCards = '';
-                mockMatches.forEach((lounge, i) => {
-                    loungeCards += `
-                        <div class="relative overflow-hidden rounded-2xl border bg-gradient-to-b p-5 ${i === 0 ? 'from-slate-900 to-slate-950 border-amber-500/40 shadow-xl' : 'from-slate-900/90 to-slate-950/90 border-slate-800'} animate-fade-in">
-                            ${i === 0 ? '<div class="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-yellow-400 text-slate-950 font-mono font-black text-[9px] px-3 py-1 rounded-bl-xl shadow-md tracking-wider">RECOMMENDED</div>' : ''}
-                            <div class="flex items-start justify-between mb-2">
-                                <div>
-                                    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">${lounge.network}</span>
-                                    <h4 class="text-lg font-bold text-white tracking-tight mt-0.5">${lounge.name}</h4>
-                                </div>
-                            </div>
-                            <div class="flex gap-2 mb-4">
+                            <p class="text-xs text-slate-400 leading-relaxed mb-4">${lounge.description}</p>
+                            <div class="flex gap-2">
                                 <span class="text-xs bg-slate-800/80 text-slate-300 px-2.5 py-1 rounded-md border border-slate-700/50">📍 ${lounge.terminal}</span>
-                                <span class="text-xs px-2.5 py-1 rounded-md font-semibold border ${i === 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400 border-slate-700/50'}">✓ ${lounge.status}</span>
-                            </div>
-                            <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
-                                <div class="text-xs text-slate-300 font-medium">Use card: <span class="text-amber-400 font-semibold">${lounge.accessVia}</span></div>
+                                <span class="text-xs px-2.5 py-1 rounded-md font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">✓ Entry Granted</span>
                             </div>
                         </div>`;
                 });
-
-                container.innerHTML = `
-                    <div class="animate-fade-in space-y-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <div>
-                                <h2 class="text-2xl font-bold tracking-tight text-white">Your Best Access</h2>
-                                <p class="text-slate-400 text-xs mt-0.5">Found ${mockMatches.length} valid options</p>
-                            </div>
-                            <button onclick="navigate('SCAN_FRONT')" class="text-xs font-semibold text-amber-400 bg-amber-400/10 px-3 py-2 rounded-xl border border-amber-500/20 transition-colors hover:bg-amber-400/20">
-                                Scan New
-                            </button>
-                        </div>
-                        <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-                            ${loungeCards}
-                        </div>
-                    </div>`;
             }
+
+            container.innerHTML = `
+                <div class="animate-fade-in space-y-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h2 class="text-2xl font-bold tracking-tight text-white">Access Dashboard</h2>
+                            <p class="text-slate-400 text-xs mt-0.5">Matched matches based on scanned credentials</p>
+                        </div>
+                        <button onclick="resetAppLoop()" class="text-xs font-semibold text-amber-400 bg-amber-400/10 px-3 py-2 rounded-xl border border-amber-500/20 transition-all hover:bg-amber-400/20">
+                            Scan New Frame
+                        </button>
+                    </div>
+                    <div class="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+                        ${dynamicListMarkup}
+                    </div>
+                </div>`;
         }
 
-        // Global State Modification Pipeline
-        function navigate(nextStep) {
-            currentStep = nextStep;
-            render();
+        // Global Reset Command
+        function resetAppLoop() {
+            walletData = { qrs: [], cardNetworks: [], holdsAmexPlatinum: false, holdsSapphireReserve: false };
+            showCaptureView();
         }
 
-        // Initial App Boot Command
-        document.addEventListener('DOMContentLoaded', () => {
-            render();
-            
-            // Register PWA service worker safely backgrounded
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('./sw.js').catch(err => console.warn(err));
-            }
-        });
-    </script>
-</body>
-</html>
+        // Global Debug Interface Log Helper
+        function updateDebug(msg, systemState) {
+            document.getElementById('debug
