@@ -6,7 +6,7 @@
     <title>LoungeConcierge - Smart Lounge Matcher</title>
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#0f172a">
-    <!-- Tailwind CSS Play CDN for standalone single-file running -->
+    <!-- Tailwind CSS Play CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -195,7 +195,8 @@
             );
         }
 
-        const root = tragedies = RoyalReactDOM.createRoot(document.getElementById('root'));
+        // Fixed DOM Mounting Injection Entry point
+        const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>
