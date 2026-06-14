@@ -1,0 +1,17 @@
+{
+  "short_name": "LoungeConcierge",
+  "name": "LoungeConcierge Premium Access Matcher",
+  "icons": [
+    {
+      "src": "icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "orientation": "portrait"
+}
